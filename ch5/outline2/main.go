@@ -8,19 +8,21 @@ import (
 	"golang.org/x/net/html"
 )
 
-var depth int
-
-func startElement(n *html.Node) {
-	if n.Type == html.ElementNode {
-		fmt.Printf("%*s<%s>\n", depth*2, "", n.Data)
-		depth++
+func outline(doc *html.Node) {
+	var depth int
+	startElement := func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			fmt.Printf("%*s<%s>\n", depth*2, "", n.Data)
+			depth++
+		}
 	}
-}
-func endElement(n *html.Node) {
-	if n.Type == html.ElementNode {
-		depth--
-		fmt.Printf("%*s</%s>\n", depth*2, "", n.Data)
+	endElement := func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			depth--
+			fmt.Printf("%*s</%s>\n", depth*2, "", n.Data)
+		}
 	}
+	forEachNode(doc, startElement, endElement)
 }
 
 func main() {
@@ -39,7 +41,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "outline: %v\n", err)
 		os.Exit(1)
 	}
-	forEachNode(doc, startElement, endElement)
+	outline(doc)
 }
 
 func forEachNode(n *html.Node, pre, post func(n *html.Node)) {
