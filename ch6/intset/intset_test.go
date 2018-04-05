@@ -138,7 +138,7 @@ func TestElems(t *testing.T) {
 	}
 	for i, elem := range elements {
 		if elem != expectedElements[i] {
-			t.Errorf("Element [%d] doesn't match, got %d, expected %d\n", elem, expectedElements[i])
+			t.Errorf("Element [%d] doesn't match, got %d, expected %d\n", i, elem, expectedElements[i])
 		}
 	}
 
