@@ -70,3 +70,76 @@ func Test(t *testing.T) {
 	}
 
 }
+
+func TestIntersection(t *testing.T) {
+	var x, y IntSet
+
+	x.Add(1)
+	x.Add(9)
+	x.Add(144)
+
+	y.Add(2)
+	y.Add(9)
+	y.Add(144)
+
+	x.IntersectWith(&y)
+	expected := "{9 144}"
+	if x.String() != expected {
+		t.Errorf("expected %s, got %s", expected, x.String())
+	}
+}
+func TestDifference(t *testing.T) {
+	var x, y IntSet
+
+	x.Add(1)
+	x.Add(9)
+	x.Add(144)
+	x.Add(20000)
+
+	y.Add(2)
+	y.Add(9)
+	y.Add(144)
+
+	x.DifferenceWith(&y)
+	expected := "{1 20000}"
+	if x.String() != expected {
+		t.Errorf("expected %s, got %s", expected, x.String())
+	}
+}
+func TestSymmetricDifference(t *testing.T) {
+	var x, y IntSet
+
+	x.Add(1)
+	x.Add(9)
+	x.Add(144)
+	x.Add(20000)
+
+	y.Add(2)
+	y.Add(9)
+	y.Add(144)
+	y.Add(1440000)
+
+	x.SymmetricDifferenceWith(&y)
+	expected := "{1 2 20000 1440000}"
+	if x.String() != expected {
+		t.Errorf("expected %s, got %s", expected, x.String())
+	}
+}
+
+func TestElems(t *testing.T) {
+	var x IntSet
+	expectedElements := []uint{1, 9, 144, 2000}
+	for _, elem := range expectedElements {
+		x.Add(int(elem))
+	}
+	elements := x.Elems()
+	if len(elements) != len(expectedElements) {
+		t.Errorf("len of slices doesn't match, got %d, expected %d\n", len(elements), len(expectedElements))
+	}
+	for i, elem := range elements {
+		if elem != expectedElements[i] {
+			t.Errorf("Element [%d] doesn't match, got %d, expected %d\n", elem, expectedElements[i])
+		}
+	}
+
+}
