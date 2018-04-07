@@ -3,11 +3,19 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 )
 
 type tree struct {
 	value       int
 	left, right *tree
+}
+
+func (t *tree) String() string {
+	if t != nil {
+		return t.left.String() + " " + strconv.Itoa(t.value) + " " + t.right.String()
+	}
+	return ""
 }
 
 func Sort(values []int) {
@@ -16,6 +24,7 @@ func Sort(values []int) {
 		root = addRoot(root, value)
 	}
 	appendValues(values[:0], root)
+	fmt.Println(root)
 }
 
 func appendValues(values []int, t *tree) []int {
