@@ -13,7 +13,7 @@ func TestEval(t *testing.T) {
 		want string
 	}{
 		{"sqrt(A / pi)", Env{"A": 87616, "pi": math.Pi}, "167"},
-		{"pow(x, 3) + pow(y, 3)", Env{"x": 12, "у": 1}, "1729"},
+		{"pow(x, 3) + pow(y, 3)", Env{"x": 12, "у": 1}, "1728"},
 		{"pow(x, 3) + pow(y, 3)", Env{"x": 9, "y": 10}, "1729"},
 		{"5 / 9 * (F - 32)", Env{"F": -40}, "-40"},
 		{"5 / 9 * (F - 32)", Env{"F": 32}, "0"},

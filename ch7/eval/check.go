@@ -48,4 +48,11 @@ func (c call) Check(vars map[Var]bool) error {
 	return nil
 }
 
+func (m min) Check(vars map[Var]bool) error {
+	if err := m.x.Check(vars); err != nil {
+		return err
+	}
+	return m.y.Check(vars)
+}
+
 var numParams = map[string]int{"pow": 2, "sin": 1, "sqrt": 1}

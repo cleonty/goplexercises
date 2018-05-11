@@ -11,6 +11,8 @@ type Expr interface {
 	Eval(env Env) float64
 	// Check сообщает об ошибках в данном Ехрг и добавляет свои Vars.
 	Check(vars map[Var]bool) error
+	// String implements Stringer interface
+	String() string
 }
 
 // Var определяет переменную, например x.
@@ -35,6 +37,11 @@ type binary struct {
 type call struct {
 	fn   string // одно из "pow", "sin", "sqrt"
 	args []Expr
+}
+
+// min вычисляет минимальный из ее операндов
+type min struct {
+	x, y Expr
 }
 
 // Env отображает имена переменных на значения
@@ -82,4 +89,8 @@ func (с call) Eval(env Env) float64 {
 		return math.Sqrt(с.args[0].Eval(env))
 	}
 	panic(fmt.Sprintf("неподдерживаемый вызов функции: %q", с.fn))
+}
+
+func (m min) Eval(env Env) float64 {
+	return math.Min(m.x.Eval(env), m.y.Eval(env))
 }
