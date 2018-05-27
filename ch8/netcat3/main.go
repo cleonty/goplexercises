@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -18,16 +17,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer conn.Close()
-	var s string
-	for {
-		if _, err := fmt.Fscanf(conn, "%s", &s); err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("%s\n", s)
-	}
-
-	//mustCopy(os.Stdout, conn)
+	done := make(chan struct{})
+	go func() {
+		io.Copy(os.Stdout, conn)
+		done<-struct{}{}
+	}()
+	mustCopy(conn, os.Stdin)
+	conn.Close()
+	<-done
 }
 
 func mustCopy(dst io.Writer, src io.Reader) {
