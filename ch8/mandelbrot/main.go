@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"math/cmplx"
+	"sync"
 	"net/http"
 )
 
@@ -26,14 +27,24 @@ func fractal(w io.Writer) {
 		width, height          = 1024, 1024
 	)
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	var wg sync.WaitGroup
+	var mutex sync.Mutex
 	for py := 0; py < height; py++ {
 		y := float64(py)/height*(ymax-ymin) + ymin
 		for px := 0; px < width; px++ {
 			x := float64(px)/width*(xmax-xmin) + xmin
 			z := complex(x, y)
-			img.Set(px, py, mandelbrot(z))
+			wg.Add(1)
+			go func(px, py int) {
+				z1 := mandelbrot(z)
+				mutex.Lock()
+				img.Set(px, py, z1)
+				mutex.Unlock()
+				wg.Done()
+			}(px, py)
 		}
 	}
+	wg.Wait()
 	png.Encode(w, img)
 }
 
