@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"sync"
+
 	"github.com/cleonty/gopl/ch8/thumbnail"
 )
 
@@ -22,7 +23,7 @@ func makeThumbnails2(filenames []string) {
 }
 
 func makeThumbnails3(filenames []string) {
-	ch := make (chan struct{})
+	ch := make(chan struct{})
 	for _, f := range filenames {
 		go func(filename string) {
 			thumbnail.ImageFile(filename)
@@ -31,12 +32,12 @@ func makeThumbnails3(filenames []string) {
 	}
 	for range filenames {
 		log.Println("finished with one file")
-		<- ch
+		<-ch
 	}
 }
 
-func makeThumbnails4(filenames []string) error{
-	errors := make (chan error)
+func makeThumbnails4(filenames []string) error {
+	errors := make(chan error)
 	for _, f := range filenames {
 		go func(filename string) {
 			_, err := thumbnail.ImageFile(filename)
@@ -46,7 +47,7 @@ func makeThumbnails4(filenames []string) error{
 		}(f)
 	}
 	for range filenames {
-		if err := <- errors; err != nil {
+		if err := <-errors; err != nil {
 			log.Println("ошибка")
 			return err
 		}
@@ -57,18 +58,18 @@ func makeThumbnails4(filenames []string) error{
 func makeThumbnails5(filenames []string) (thumbfiles []string, err error) {
 	type item struct {
 		thumbfile string
-		err error
+		err       error
 	}
-	ch := make (chan item, len(filenames))
+	ch := make(chan item, len(filenames))
 	for _, f := range filenames {
 		go func(filename string) {
 			var it item
 			it.thumbfile, it.err = thumbnail.ImageFile(filename)
-			ch <-it
+			ch <- it
 		}(f)
 	}
 	for range filenames {
-		it := <- ch
+		it := <-ch
 		if it.err != nil {
 			return nil, it.err
 		}
@@ -107,7 +108,7 @@ func makeThumbnails6(filenames <-chan string) int64 {
 func main() {
 	files := []string{"./0.jpg", "./1.jpg", "./2.jpg", "./3.jpg", "./4.jpg"}
 	ch := make(chan string)
-	go func () {
+	go func() {
 		for _, f := range files {
 			ch <- f
 		}
@@ -117,4 +118,3 @@ func main() {
 	log.Println("done")
 	log.Println(total)
 }
-

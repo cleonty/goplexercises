@@ -8,8 +8,8 @@ import (
 	"io"
 	"log"
 	"math/cmplx"
-	"sync"
 	"net/http"
+	"sync"
 )
 
 func main() {
