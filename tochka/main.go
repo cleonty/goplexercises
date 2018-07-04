@@ -1,10 +1,12 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"net/url"
 	"sync"
 
@@ -25,8 +27,12 @@ type ParseRule struct {
 }
 
 type Item struct {
-	Link  string
-	Title string
+	Link  string `json:"link"`
+	Title string `json:"title"`
+}
+
+type App struct {
+	db *sql.DB
 }
 
 var rule = ParseRule{
@@ -100,26 +106,64 @@ func readRules() ([]ParseRule, error) {
 	return parseRules, nil
 }
 
+func (app *App) SearchHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			fmt.Println(err)
+			return
+		}
+		query := r.Form.Get("q")
+		items, err := getNews(app.db, query)
+		if err != nil {
+			fmt.Fprintf(w, "%v\n", err)
+		}
+		data, err := json.MarshalIndent(items, "", "  ")
+		if err != nil {
+			log.Fatalf("Сбой маршалинга JSON: %v\n", err)
+		}
+		w.Header().Set("Content-type", "application/json")
+		fmt.Fprintf(w, "%s\n", data)
+	})
+}
+
 func main() {
 	rules, err := readRules()
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("%+v\n", rules)
+	db, err := createDatabase()
+	if err != nil {
+		log.Fatal(err)
+	}
 	var wg sync.WaitGroup
 	for _, rule := range rules {
 		wg.Add(1)
-		go func() {
+		go func(rule ParseRule) {
 			defer wg.Done()
 			items, err := loadHTMLItems(&rule)
 			if err != nil {
 				log.Fatal(err)
 			}
-			for i, item := range items {
-				fmt.Printf("%d %s(%s)\n", i, item.Title, item.Link)
+			for _, item := range items {
+				//fmt.Printf("%d %s(%s)\n", i, item.Title, item.Link)
+				err = insertNews(db, &item)
+				if err != nil {
+					log.Println(err)
+				}
 			}
-		}()
+		}(rule)
 	}
 	wg.Wait()
-
+	fmt.Println("Новости")
+	items, err := getNews(db, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for i, item := range items {
+		fmt.Printf("%d %s(%s)\n", i, item.Title, item.Link)
+	}
+	app := &App{db: db}
+	http.Handle("/", app.SearchHandler())
+	http.ListenAndServe(":8080", nil)
 }
