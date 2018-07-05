@@ -1,0 +1,10 @@
+<div class="main">
+  <div class="search">
+    <input type="text" maxlength="50" name="query" placeholder="" #query (keyup)="search(query.value)" />
+  </div>
+  <div class="news-list">
+    <div class="news" *ngFor="let news of newsList | async">
+      <a [href]='news.link' target="_blank">{{news.title}}</a>
+    </div>
+  </div>
+</div>

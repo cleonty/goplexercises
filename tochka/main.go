@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sync"
+	"time"
 
 	"github.com/antchfx/htmlquery"
 	"golang.org/x/net/html"
@@ -24,6 +24,7 @@ type ParseRule struct {
 	NewsElementsPath string      `json:"newsPath"`
 	LinkRule         ExtractRule `json:"linkRule"`
 	TitleRule        ExtractRule `json:"titleRule"`
+	Interval         uint        `json:"interval"`
 }
 
 type Item struct {
@@ -32,7 +33,8 @@ type Item struct {
 }
 
 type App struct {
-	db *sql.DB
+	db         *sql.DB
+	parseRules []ParseRule
 }
 
 var rule = ParseRule{
@@ -45,6 +47,17 @@ var rule = ParseRule{
 		RelativePath: "a",
 		Attribute:    "",
 	},
+}
+
+func (app *App) readRules() error {
+	data, err := ioutil.ReadFile("./rules.json")
+	if err != nil {
+		return err
+	}
+	if err = json.Unmarshal(data, &app.parseRules); err != nil {
+		return fmt.Errorf("error while reading parsing rules: %v\n", err)
+	}
+	return nil
 }
 
 func loadHTMLItems(rule *ParseRule) ([]Item, error) {
@@ -117,7 +130,7 @@ func (app *App) SearchHandler() http.Handler {
 		if err != nil {
 			fmt.Fprintf(w, "%v\n", err)
 		}
-		data, err := json.MarshalIndent(items, "", "  ")
+		data, err := json.MarshalIndent(items, "", "")
 		if err != nil {
 			log.Fatalf("Сбой маршалинга JSON: %v\n", err)
 		}
@@ -126,35 +139,47 @@ func (app *App) SearchHandler() http.Handler {
 	})
 }
 
-func main() {
-	rules, err := readRules()
+func updateNewsPeriodically(app *App, rule ParseRule) {
+	updateNews(app, rule)
+	ticker := time.NewTicker(time.Duration(rule.Interval) * time.Minute)
+	for {
+		select {
+		case <-ticker.C:
+			updateNews(app, rule)
+		}
+	}
+}
+
+func updateNews(app *App, rule ParseRule) {
+	items, err := loadHTMLItems(&rule)
 	if err != nil {
 		log.Fatal(err)
 	}
+	for _, item := range items {
+		//fmt.Printf("%d %s(%s)\n", i, item.Title, item.Link)
+		err = insertNews(app.db, &item)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+func main() {
+	app := &App{}
+	err := app.readRules()
+	if err != nil {
+		log.Fatal(err)
+	}
+	rules := app.parseRules
 	fmt.Printf("%+v\n", rules)
 	db, err := createDatabase()
 	if err != nil {
 		log.Fatal(err)
 	}
-	var wg sync.WaitGroup
+	app.db = db
 	for _, rule := range rules {
-		wg.Add(1)
-		go func(rule ParseRule) {
-			defer wg.Done()
-			items, err := loadHTMLItems(&rule)
-			if err != nil {
-				log.Fatal(err)
-			}
-			for _, item := range items {
-				//fmt.Printf("%d %s(%s)\n", i, item.Title, item.Link)
-				err = insertNews(db, &item)
-				if err != nil {
-					log.Println(err)
-				}
-			}
-		}(rule)
+		go updateNewsPeriodically(app, rule)
 	}
-	wg.Wait()
 	fmt.Println("Новости")
 	items, err := getNews(db, "")
 	if err != nil {
@@ -163,7 +188,8 @@ func main() {
 	for i, item := range items {
 		fmt.Printf("%d %s(%s)\n", i, item.Title, item.Link)
 	}
-	app := &App{db: db}
-	http.Handle("/", app.SearchHandler())
+
+	http.Handle("/news/", app.SearchHandler())
+	http.Handle("/", http.FileServer(http.Dir("./client/dist/client")))
 	http.ListenAndServe(":8080", nil)
 }

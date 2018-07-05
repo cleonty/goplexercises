@@ -3,15 +3,16 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	_ "time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var newsStatement = `CREATE TABLE IF NOT EXISTS news (
+const newsStatement = `
+        CREATE TABLE IF NOT EXISTS news (
         'id' INTEGER PRIMARY KEY AUTOINCREMENT,
         'link' VARCHAR(1024) UNIQUE NOT NULL,
-        'title' VARCHAR(1024) NOT NULL
+        'title' VARCHAR(1024) NOT NULL,
+		'timestamp' DATETIME DEFAULT CURRENT_TIMESTAMP
     )`
 
 func createDatabase() (*sql.DB, error) {
@@ -29,7 +30,7 @@ func createDatabase() (*sql.DB, error) {
 
 func getNews(db *sql.DB, query string) ([]Item, error) {
 	var items []Item
-	rows, err := db.Query("SELECT link, title FROM news WHERE instr(title, ?) <> 0", query)
+	rows, err := db.Query("SELECT link, title FROM news WHERE instr(title, ?) <> 0 ORDER BY timestamp DESC", query)
 	if err != nil {
 		return nil, err
 	}
@@ -42,15 +43,14 @@ func getNews(db *sql.DB, query string) ([]Item, error) {
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return items, nil
 }
 
 func insertNews(db *sql.DB, item *Item) error {
-	stmt, err := db.Prepare("INSERT INTO news(link, title) values(?,?)")
-	if err != nil {
-		return err
-	}
-	_, err = stmt.Exec(item.Link, item.Title)
+	_, err := db.Exec("INSERT INTO news(link, title) values(?, ?)", item.Link, item.Title)
 	if err != nil {
 		return fmt.Errorf("Insert failed link='%s', title='%s': %v", item.Link, item.Title, err)
 	}
