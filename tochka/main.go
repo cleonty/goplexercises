@@ -37,18 +37,6 @@ type App struct {
 	parseRules []ParseRule
 }
 
-var rule = ParseRule{
-	NewsElementsPath: `//div[@class="item"]`,
-	LinkRule: ExtractRule{
-		RelativePath: "a",
-		Attribute:    "href",
-	},
-	TitleRule: ExtractRule{
-		RelativePath: "a",
-		Attribute:    "",
-	},
-}
-
 func (app *App) readRules() error {
 	data, err := ioutil.ReadFile("./rules.json")
 	if err != nil {
