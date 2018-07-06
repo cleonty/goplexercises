@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/antchfx/htmlquery"
@@ -19,37 +23,41 @@ type ExtractRule struct {
 	Attribute    string `json:"attr,omitempty"`
 }
 
-type ParseRule struct {
+type ParsingRule struct {
+	Interval         uint        `json:"interval"`
 	URL              string      `json:"url"`
 	NewsElementsPath string      `json:"newsPath"`
 	LinkRule         ExtractRule `json:"linkRule"`
 	TitleRule        ExtractRule `json:"titleRule"`
-	Interval         uint        `json:"interval"`
 }
 
-type Item struct {
+// NewsItem represnts a news
+type NewsItem struct {
 	Link  string `json:"link"`
 	Title string `json:"title"`
 }
 
 type App struct {
-	db         *sql.DB
-	parseRules []ParseRule
+	db           *sql.DB
+	server       *http.Server
+	parsingRules []ParsingRule
 }
 
-func (app *App) readRules() error {
-	data, err := ioutil.ReadFile("./rules.json")
+const parsingRulesFile = "./rules.json"
+
+func (app *App) readParsingRules() error {
+	data, err := ioutil.ReadFile(parsingRulesFile)
 	if err != nil {
 		return err
 	}
-	if err = json.Unmarshal(data, &app.parseRules); err != nil {
-		return fmt.Errorf("error while reading parsing rules: %v\n", err)
+	if err = json.Unmarshal(data, &app.parsingRules); err != nil {
+		return fmt.Errorf("error while reading parsing rules: %v", err)
 	}
 	return nil
 }
 
-func loadHTMLItems(rule *ParseRule) ([]Item, error) {
-	var items []Item
+func (app *App) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
+	var items []NewsItem
 	doc, err := htmlquery.LoadURL(rule.URL)
 	if err != nil {
 		return nil, err
@@ -58,7 +66,7 @@ func loadHTMLItems(rule *ParseRule) ([]Item, error) {
 		link := extractEntity(node, &rule.LinkRule)
 		title := extractEntity(node, &rule.TitleRule)
 		link = processURL(rule.URL, link)
-		item := Item{
+		item := NewsItem{
 			Link:  link,
 			Title: title,
 		}
@@ -95,89 +103,102 @@ func processURL(baseURL string, linkURL string) string {
 	return linkURL
 }
 
-func readRules() ([]ParseRule, error) {
-	data, err := ioutil.ReadFile("./rules.json")
-	if err != nil {
-		return nil, err
-	}
-	var parseRules []ParseRule
-	if err = json.Unmarshal(data, &parseRules); err != nil {
-		return nil, fmt.Errorf("Сбой маршалинга JSON: %v\n", err)
-	}
-	return parseRules, nil
-}
-
-func (app *App) SearchHandler() http.Handler {
+func (app *App) searchHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			fmt.Println(err)
 			return
 		}
 		query := r.Form.Get("q")
-		items, err := getNews(app.db, query)
+		items, err := app.getNews(query)
 		if err != nil {
 			fmt.Fprintf(w, "%v\n", err)
 		}
 		data, err := json.MarshalIndent(items, "", "")
 		if err != nil {
-			log.Fatalf("Сбой маршалинга JSON: %v\n", err)
+			return
 		}
 		w.Header().Set("Content-type", "application/json")
 		fmt.Fprintf(w, "%s\n", data)
 	})
 }
 
-func updateNewsPeriodically(app *App, rule ParseRule) {
-	updateNews(app, rule)
+func (app *App) updateNewsPeriodically(ctx context.Context, rule ParsingRule) {
+	app.updateNews(rule)
 	ticker := time.NewTicker(time.Duration(rule.Interval) * time.Minute)
 	for {
 		select {
 		case <-ticker.C:
-			updateNews(app, rule)
+			app.updateNews(rule)
+		case <-ctx.Done():
+			log.Printf("Stop updater for %s\n", rule.URL)
+			return
 		}
 	}
 }
 
-func updateNews(app *App, rule ParseRule) {
-	items, err := loadHTMLItems(&rule)
+func (app *App) updateNews(rule ParsingRule) {
+	items, err := app.loadNewsList(&rule)
 	if err != nil {
 		log.Fatal(err)
 	}
 	for _, item := range items {
-		//fmt.Printf("%d %s(%s)\n", i, item.Title, item.Link)
-		err = insertNews(app.db, &item)
+		err = app.insertNewsItem(&item)
 		if err != nil {
 			log.Println(err)
 		}
 	}
 }
 
+func (app *App) startUpdaters(ctx context.Context) {
+	for _, rule := range app.parsingRules {
+		go app.updateNewsPeriodically(ctx, rule)
+	}
+}
+
+func (app *App) start() (chan struct{}, error) {
+	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	app.startUpdaters(ctx)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGTERM)
+	signal.Notify(c, syscall.SIGINT)
+	server := &http.Server{Addr: ":8080"}
+	go func() {
+		<-c
+		log.Println("Exiting...")
+		server.Shutdown(ctx)
+		cancel()
+		close(c)
+		app.db.Close()
+		log.Println("Goodbye!")
+		done <- struct{}{}
+	}()
+	http.Handle("/news/", app.searchHandler())
+	http.Handle("/", http.FileServer(http.Dir("./client/dist/client")))
+	go func() {
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("HTTP server ListenAndServe: %v", err)
+		}
+	}()
+	return done, nil
+}
+
 func main() {
 	app := &App{}
-	err := app.readRules()
+	err := app.readParsingRules()
 	if err != nil {
 		log.Fatal(err)
 	}
-	rules := app.parseRules
-	fmt.Printf("%+v\n", rules)
-	db, err := createDatabase()
+	log.Printf("%+v\n", app.parsingRules)
+	err = app.openDatabase()
+	if err = app.openDatabase(); err != nil {
+		log.Fatal(err)
+	}
+	done, err := app.start()
 	if err != nil {
 		log.Fatal(err)
 	}
-	app.db = db
-	for _, rule := range rules {
-		go updateNewsPeriodically(app, rule)
-	}
-	fmt.Println("Новости")
-	items, err := getNews(db, "")
-	if err != nil {
-		log.Fatal(err)
-	}
-	for i, item := range items {
-		fmt.Printf("%d %s(%s)\n", i, item.Title, item.Link)
-	}
-
-	http.Handle("/news/", app.SearchHandler())
-	http.Handle("/", http.FileServer(http.Dir("./client/dist/client")))
-	http.ListenAndServe(":8080", nil)
+	<-done
+	fmt.Println("Done!")
 }
