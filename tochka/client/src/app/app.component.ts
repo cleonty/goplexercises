@@ -1,8 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, of } from 'rxjs';
 import { NewsItem } from './news-item';
-import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, switchMap,  } from 'rxjs/operators';
 
 @Component({
   selector: 'app-root',
@@ -11,26 +11,29 @@ import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
 })
 export class AppComponent implements OnInit {
   private newsURL = '/news';
-  private query = new Subject<string>();
-  newsList: Observable<NewsItem[]>;
+  private querySubject = new Subject<string>();
+  newsListObservable: Observable<NewsItem[]>;
 
 
   constructor(private http: HttpClient) {}
 
   ngOnInit(): void {
-    this.newsList = this.query.pipe(
+    this.newsListObservable = this.querySubject.pipe(
       debounceTime(300),
       distinctUntilChanged(),
-      switchMap((query: string) => this.getNews(query)),
+      switchMap((query: string) => this.getNewsList(query)),
     );
-    this.search('');
   }
 
   search(query: string): void {
-    this.query.next(query.trim());
+    this.querySubject.next(query.trim());
   }
 
-  getNews(query: string): Observable<NewsItem[]> {
-    return this.http.get<NewsItem[]>(`${this.newsURL}?q=${query}`);
+  getNewsList(query: string): Observable<NewsItem[]> {
+    if (query.length > 0) {
+      return this.http.get<NewsItem[]>(`${this.newsURL}?q=${query}`);
+    } else {
+      return of([]);
+    }
   }
 }

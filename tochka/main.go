@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,6 +42,7 @@ type App struct {
 	db           *sql.DB
 	server       *http.Server
 	parsingRules []ParsingRule
+	wg           sync.WaitGroup
 }
 
 const parsingRulesFile = "./rules.json"
@@ -125,6 +127,7 @@ func (app *App) searchHandler() http.Handler {
 
 func (app *App) updateNewsPeriodically(ctx context.Context, rule ParsingRule) {
 	app.updateNews(rule)
+	defer app.wg.Done()
 	ticker := time.NewTicker(time.Duration(rule.Interval) * time.Minute)
 	for {
 		select {
@@ -152,6 +155,7 @@ func (app *App) updateNews(rule ParsingRule) {
 
 func (app *App) startUpdaters(ctx context.Context) {
 	for _, rule := range app.parsingRules {
+		app.wg.Add(1)
 		go app.updateNewsPeriodically(ctx, rule)
 	}
 }
@@ -169,7 +173,7 @@ func (app *App) start() (chan struct{}, error) {
 		log.Println("Exiting...")
 		server.Shutdown(ctx)
 		cancel()
-		close(c)
+		app.wg.Wait()
 		app.db.Close()
 		log.Println("Goodbye!")
 		done <- struct{}{}
