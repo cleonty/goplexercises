@@ -105,7 +105,7 @@ func convertToAbsURL(baseURL string, linkURL string) (string, error) {
 		return "", err
 	}
 	if !url.IsAbs() {
-		return "", base.ResolveReference(url).String()
+		return base.ResolveReference(url).String(), nil
 	}
 	return linkURL, nil
 }
