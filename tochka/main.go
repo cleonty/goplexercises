@@ -20,6 +20,9 @@ import (
 	"golang.org/x/net/html"
 )
 
+const databseFile = "./news.db"
+const parsingRulesFile = "./rules.json"
+
 type ExtractRule struct {
 	RelativePath string `json:"path"`
 	Attribute    string `json:"attr,omitempty"`
@@ -46,8 +49,6 @@ type App struct {
 	wg           sync.WaitGroup
 }
 
-const parsingRulesFile = "./rules.json"
-
 func (app *App) readParsingRules() error {
 	data, err := ioutil.ReadFile(parsingRulesFile)
 	if err != nil {
@@ -68,7 +69,10 @@ func (app *App) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
 	for _, node := range htmlquery.Find(doc, rule.NewsElementsPath) {
 		link := extractEntity(node, &rule.LinkRule)
 		title := extractEntity(node, &rule.TitleRule)
-		link = processURL(rule.URL, link)
+		link, err = convertToAbsURL(rule.URL, link)
+		if err != nil {
+			return nil, fmt.Errorf("error converting link url %s to absolute url using base url %s: %v", link, rule.URL, err) 
+		}
 		item := NewsItem{
 			Link:  link,
 			Title: title,
@@ -91,19 +95,19 @@ func extractEntity(parentNode *html.Node, rule *ExtractRule) string {
 	return result
 }
 
-func processURL(baseURL string, linkURL string) string {
+func convertToAbsURL(baseURL string, linkURL string) (string, error) {
 	url, err := url.Parse(linkURL)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	base, err := url.Parse(baseURL)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	if !url.IsAbs() {
-		return base.ResolveReference(url).String()
+		return "", base.ResolveReference(url).String()
 	}
-	return linkURL
+	return linkURL, nil
 }
 
 func (app *App) searchHandler() http.Handler {
@@ -188,8 +192,6 @@ func (app *App) start() (chan struct{}, error) {
 	}()
 	return done, nil
 }
-
-const databseFile = "./news.db"
 
 const newsStatement = `
         CREATE TABLE IF NOT EXISTS 'news' (
