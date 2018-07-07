@@ -15,4 +15,5 @@
       <a [href]='newsItem.link' target="_blank">{{newsItem.title}}</a>
     </div>
   </div>
+  <div *ngIf='(newsListObservable | async)?.length === 0'>Ничего не найдено.</div>
 </div>

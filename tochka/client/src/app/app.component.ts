@@ -30,10 +30,6 @@ export class AppComponent implements OnInit {
   }
 
   getNewsList(query: string): Observable<NewsItem[]> {
-    if (query.length > 0) {
-      return this.http.get<NewsItem[]>(`${this.newsURL}?q=${query}`);
-    } else {
-      return of([]);
-    }
+    return (query.length > 0) ? this.http.get<NewsItem[]>(`${this.newsURL}?q=${query}`) : of(null);
   }
 }
