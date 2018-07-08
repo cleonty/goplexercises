@@ -76,24 +76,22 @@ func (app *NewsApp) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
 	return items, nil
 }
 
-func (app *NewsApp) searchHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			fmt.Println(err)
-			return
-		}
-		query := r.Form.Get("q")
-		items, err := app.getNews(query)
-		if err != nil {
-			fmt.Fprintf(w, "%v\n", err)
-		}
-		data, err := json.MarshalIndent(items, "", "")
-		if err != nil {
-			return
-		}
-		w.Header().Set("Content-type", "application/json")
-		fmt.Fprintf(w, "%s\n", data)
-	})
+func (app *NewsApp) searchHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		log.Println(err)
+		return
+	}
+	query := r.Form.Get("q")
+	items, err := app.getNews(query)
+	if err != nil {
+		fmt.Fprintf(w, "%v\n", err)
+	}
+	data, err := json.MarshalIndent(items, "", "")
+	if err != nil {
+		return
+	}
+	w.Header().Set("Content-type", "application/json")
+	fmt.Fprintf(w, "%s\n", data)
 }
 
 func (app *NewsApp) updateNewsPeriodically(rule ParsingRule) {
@@ -195,7 +193,7 @@ func (app *NewsApp) Start() error {
 	}
 	app.startUpdaters()
 	mux := http.NewServeMux()
-	mux.Handle("/news/", app.searchHandler())
+	mux.HandleFunc("/news/", app.searchHandler)
 	mux.Handle("/", http.FileServer(http.Dir("./client/dist/client")))
 	if err := http.ListenAndServe(":8080", mux); err != nil {
 		return err
