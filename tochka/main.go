@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,10 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/antchfx/htmlquery"
@@ -42,14 +37,13 @@ type NewsItem struct {
 	Title string `json:"title"`
 }
 
-type App struct {
+type NewsApp struct {
 	db           *sql.DB
 	server       *http.Server
 	parsingRules []ParsingRule
-	wg           sync.WaitGroup
 }
 
-func (app *App) readParsingRules() error {
+func (app *NewsApp) readParsingRules() error {
 	data, err := ioutil.ReadFile(parsingRulesFile)
 	if err != nil {
 		return err
@@ -60,7 +54,7 @@ func (app *App) readParsingRules() error {
 	return nil
 }
 
-func (app *App) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
+func (app *NewsApp) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
 	var items []NewsItem
 	doc, err := htmlquery.LoadURL(rule.URL)
 	if err != nil {
@@ -71,7 +65,7 @@ func (app *App) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
 		title := extractEntity(node, &rule.TitleRule)
 		link, err = convertToAbsURL(rule.URL, link)
 		if err != nil {
-			return nil, fmt.Errorf("error converting link url %s to absolute url using base url %s: %v", link, rule.URL, err) 
+			return nil, fmt.Errorf("error converting link url %s to absolute url using base url %s: %v", link, rule.URL, err)
 		}
 		item := NewsItem{
 			Link:  link,
@@ -80,6 +74,131 @@ func (app *App) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func (app *NewsApp) searchHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			fmt.Println(err)
+			return
+		}
+		query := r.Form.Get("q")
+		items, err := app.getNews(query)
+		if err != nil {
+			fmt.Fprintf(w, "%v\n", err)
+		}
+		data, err := json.MarshalIndent(items, "", "")
+		if err != nil {
+			return
+		}
+		w.Header().Set("Content-type", "application/json")
+		fmt.Fprintf(w, "%s\n", data)
+	})
+}
+
+func (app *NewsApp) updateNewsPeriodically(rule ParsingRule) {
+	app.updateNews(rule)
+	ticker := time.NewTicker(time.Duration(rule.Interval) * time.Minute)
+	for {
+		select {
+		case <-ticker.C:
+			app.updateNews(rule)
+		}
+	}
+}
+
+func (app *NewsApp) updateNews(rule ParsingRule) {
+	items, err := app.loadNewsList(&rule)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, item := range items {
+		err = app.insertNewsItem(&item)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+func (app *NewsApp) startUpdaters() {
+	for _, rule := range app.parsingRules {
+		go app.updateNewsPeriodically(rule)
+	}
+}
+
+func (app *NewsApp) openDatabase() error {
+	const newsStatement = `
+		CREATE TABLE IF NOT EXISTS 'news' (
+		'id' INTEGER PRIMARY KEY AUTOINCREMENT,
+		'link' VARCHAR(1024) UNIQUE NOT NULL,
+		'title' VARCHAR(1024) NOT NULL,
+		'timestamp' DATETIME DEFAULT CURRENT_TIMESTAMP)`
+	db, err := sql.Open("sqlite3", databseFile)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(newsStatement)
+	if err != nil {
+		db.Close()
+		return err
+	}
+	app.db = db
+	return nil
+}
+
+func (app *NewsApp) getNews(query string) ([]NewsItem, error) {
+	items := make([]NewsItem, 0)
+	var statement string
+	if query != "" {
+		statement = "SELECT link, title FROM news WHERE instr(title, ?) <> 0 ORDER BY timestamp DESC"
+	} else {
+		statement = "SELECT link, title FROM news ORDER BY timestamp DESC"
+	}
+	rows, err := app.db.Query(statement, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item NewsItem
+		if err := rows.Scan(&item.Link, &item.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (app *NewsApp) insertNewsItem(item *NewsItem) error {
+	_, err := app.db.Exec("INSERT INTO news(link, title) values(?, ?)", item.Link, item.Title)
+	if err != nil {
+		return fmt.Errorf("Insert failed for link='%s', title='%s': %v", item.Link, item.Title, err)
+	}
+	return nil
+}
+
+func NewNewsApp() *NewsApp {
+	return &NewsApp{}
+}
+
+func (app *NewsApp) Start() error {
+	if err := app.readParsingRules(); err != nil {
+		return err
+	}
+	log.Printf("%+v\n", app.parsingRules)
+	if err := app.openDatabase(); err != nil {
+		return err
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/news/", app.searchHandler())
+	mux.Handle("/", http.FileServer(http.Dir("./client/dist/client")))
+	if err := http.ListenAndServe(":8080", mux); err != nil {
+		return err
+	}
+	return nil
 }
 
 func extractEntity(parentNode *html.Node, rule *ExtractRule) string {
@@ -110,161 +229,9 @@ func convertToAbsURL(baseURL string, linkURL string) (string, error) {
 	return linkURL, nil
 }
 
-func (app *App) searchHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			fmt.Println(err)
-			return
-		}
-		query := r.Form.Get("q")
-		items, err := app.getNews(query)
-		if err != nil {
-			fmt.Fprintf(w, "%v\n", err)
-		}
-		data, err := json.MarshalIndent(items, "", "")
-		if err != nil {
-			return
-		}
-		w.Header().Set("Content-type", "application/json")
-		fmt.Fprintf(w, "%s\n", data)
-	})
-}
-
-func (app *App) updateNewsPeriodically(ctx context.Context, rule ParsingRule) {
-	app.updateNews(rule)
-	defer app.wg.Done()
-	ticker := time.NewTicker(time.Duration(rule.Interval) * time.Minute)
-	for {
-		select {
-		case <-ticker.C:
-			app.updateNews(rule)
-		case <-ctx.Done():
-			log.Printf("Stop updater for %s\n", rule.URL)
-			return
-		}
-	}
-}
-
-func (app *App) updateNews(rule ParsingRule) {
-	items, err := app.loadNewsList(&rule)
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, item := range items {
-		err = app.insertNewsItem(&item)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-}
-
-func (app *App) startUpdaters(ctx context.Context) {
-	for _, rule := range app.parsingRules {
-		app.wg.Add(1)
-		go app.updateNewsPeriodically(ctx, rule)
-	}
-}
-
-func (app *App) start() (chan struct{}, error) {
-	done := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	app.startUpdaters(ctx)
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGTERM)
-	signal.Notify(c, syscall.SIGINT)
-	server := &http.Server{Addr: ":8080"}
-	go func() {
-		<-c
-		log.Println("Exiting...")
-		server.Shutdown(ctx)
-		cancel()
-		app.wg.Wait()
-		app.db.Close()
-		log.Println("Goodbye!")
-		done <- struct{}{}
-	}()
-	http.Handle("/news/", app.searchHandler())
-	http.Handle("/", http.FileServer(http.Dir("./client/dist/client")))
-	go func() {
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatalf("HTTP server ListenAndServe: %v", err)
-		}
-	}()
-	return done, nil
-}
-
-const newsStatement = `
-        CREATE TABLE IF NOT EXISTS 'news' (
-        'id' INTEGER PRIMARY KEY AUTOINCREMENT,
-        'link' VARCHAR(1024) UNIQUE NOT NULL,
-        'title' VARCHAR(1024) NOT NULL,
-		'timestamp' DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`
-
-func (app *App) openDatabase() error {
-	db, err := sql.Open("sqlite3", databseFile)
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec(newsStatement)
-	if err != nil {
-		db.Close()
-		return err
-	}
-	app.db = db
-	return nil
-}
-
-func (app *App) getNews(query string) ([]NewsItem, error) {
-	items := make([]NewsItem, 0)
-	var statement string
-	if query != "" {
-		statement = "SELECT link, title FROM news WHERE instr(title, ?) <> 0 ORDER BY timestamp DESC"
-	} else {
-		statement = "SELECT link, title FROM news ORDER BY timestamp DESC"
-	}
-	rows, err := app.db.Query(statement, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var item NewsItem
-		err = rows.Scan(&item.Link, &item.Title)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-func (app *App) insertNewsItem(item *NewsItem) error {
-	_, err := app.db.Exec("INSERT INTO news(link, title) values(?, ?)", item.Link, item.Title)
-	if err != nil {
-		return fmt.Errorf("Insert failed for link='%s', title='%s': %v", item.Link, item.Title, err)
-	}
-	return nil
-}
-
 func main() {
-	app := &App{}
-	err := app.readParsingRules()
-	if err != nil {
+	app := NewNewsApp()
+	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("%+v\n", app.parsingRules)
-	err = app.openDatabase()
-	if err = app.openDatabase(); err != nil {
-		log.Fatal(err)
-	}
-	done, err := app.start()
-	if err != nil {
-		log.Fatal(err)
-	}
-	<-done
-	fmt.Println("Done!")
 }
