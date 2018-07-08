@@ -40,7 +40,7 @@ type NewsItem struct {
 type NewsApp struct {
 	db           *sql.DB
 	server       *http.Server
-	parsingRules []ParsingRule
+	parsingRules []*ParsingRule
 }
 
 func (app *NewsApp) readParsingRules() error {
@@ -94,7 +94,7 @@ func (app *NewsApp) searchHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "%s\n", data)
 }
 
-func (app *NewsApp) updateNewsPeriodically(rule ParsingRule) {
+func (app *NewsApp) updateNewsPeriodically(rule *ParsingRule) {
 	app.updateNews(rule)
 	ticker := time.NewTicker(time.Duration(rule.Interval) * time.Minute)
 	for {
@@ -105,8 +105,8 @@ func (app *NewsApp) updateNewsPeriodically(rule ParsingRule) {
 	}
 }
 
-func (app *NewsApp) updateNews(rule ParsingRule) {
-	items, err := app.loadNewsList(&rule)
+func (app *NewsApp) updateNews(rule *ParsingRule) {
+	items, err := app.loadNewsList(rule)
 	if err != nil {
 		log.Fatal(err)
 	}
