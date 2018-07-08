@@ -79,15 +79,18 @@ func (app *NewsApp) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
 func (app *NewsApp) searchHandler(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	query := r.Form.Get("q")
 	items, err := app.getNews(query)
 	if err != nil {
-		fmt.Fprintf(w, "%v\n", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	data, err := json.MarshalIndent(items, "", "")
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-type", "application/json")
