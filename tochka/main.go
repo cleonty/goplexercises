@@ -19,16 +19,16 @@ const databseFile = "./news.db"
 const parsingRulesFile = "./rules.json"
 
 type ExtractRule struct {
-	RelativePath string `json:"path"`
-	Attribute    string `json:"attr,omitempty"`
+	XPathExpr string `json:"expr"`
+	Attribute string `json:"attr,omitempty"`
 }
 
 type ParsingRule struct {
-	Interval         uint        `json:"interval"`
-	URL              string      `json:"url"`
-	NewsElementsPath string      `json:"newsPath"`
-	LinkRule         ExtractRule `json:"linkRule"`
-	TitleRule        ExtractRule `json:"titleRule"`
+	Interval           uint        `json:"intervalMinutes"`
+	URL                string      `json:"url"`
+	NewsNodesXPathExpr string      `json:"newsNodesExpr"`
+	LinkRule           ExtractRule `json:"linkRule"`
+	TitleRule          ExtractRule `json:"titleRule"`
 }
 
 // NewsItem represnts a news
@@ -60,7 +60,7 @@ func (app *NewsApp) loadNewsList(rule *ParsingRule) ([]NewsItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, node := range htmlquery.Find(doc, rule.NewsElementsPath) {
+	for _, node := range htmlquery.Find(doc, rule.NewsNodesXPathExpr) {
 		link := extractEntity(node, &rule.LinkRule)
 		title := extractEntity(node, &rule.TitleRule)
 		link, err = convertToAbsURL(rule.URL, link)
@@ -188,10 +188,12 @@ func (app *NewsApp) Start() error {
 	if err := app.readParsingRules(); err != nil {
 		return err
 	}
-	log.Printf("%+v\n", app.parsingRules)
+	data, _ := json.MarshalIndent(app.parsingRules, "", "  ")
+	log.Printf("parsing rules: %s\n", string(data))
 	if err := app.openDatabase(); err != nil {
 		return err
 	}
+	app.startUpdaters()
 	mux := http.NewServeMux()
 	mux.Handle("/news/", app.searchHandler())
 	mux.Handle("/", http.FileServer(http.Dir("./client/dist/client")))
@@ -203,13 +205,17 @@ func (app *NewsApp) Start() error {
 
 func extractEntity(parentNode *html.Node, rule *ExtractRule) string {
 	var result string
-	node := htmlquery.FindOne(parentNode, rule.RelativePath)
+	node := htmlquery.FindOne(parentNode, rule.XPathExpr)
 	if node != nil {
 		if rule.Attribute != "" {
 			result = htmlquery.SelectAttr(node, rule.Attribute)
 		} else {
 			result = htmlquery.InnerText(node)
 		}
+	}
+	if result == "" {
+		data, _ := json.MarshalIndent(rule, "", "")
+		log.Printf("The rule %s might be not working because returns empty result", data)
 	}
 	return result
 }
