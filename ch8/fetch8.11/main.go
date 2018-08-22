@@ -65,7 +65,7 @@ func mirroredQuery() string {
 			fmt.Printf("got error: %v\n", response.err)
 			errCount++
 			if errCount > 2 {
-				return ""
+				break
 			}
 			continue
 		}
