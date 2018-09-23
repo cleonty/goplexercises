@@ -1,6 +1,7 @@
 package word
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 	"time"
@@ -104,4 +105,12 @@ func TestRandomNonPalindromes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ExampleIsPalindrome() {
+	fmt.Println(IsPalindrome("A man, a plan, a canal: Panama"))
+	fmt.Println(IsPalindrome("Palindrome"))
+	// Output:
+	// true
+	// false
 }
