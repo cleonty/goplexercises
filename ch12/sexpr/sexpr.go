@@ -6,10 +6,7 @@ import (
 	"reflect"
 )
 
-var indentString = " "
-
 func encode(buf *bytes.Buffer, v reflect.Value) error {
-	indent(buf, level)
 	switch v.Kind() {
 	case reflect.Invalid:
 		buf.WriteString("nil")
@@ -77,12 +74,6 @@ func encode(buf *bytes.Buffer, v reflect.Value) error {
 		return fmt.Errorf("неподдерживаемый тип: %s", v.Type())
 	}
 	return nil
-}
-
-func indent(buf *bytes.Buffer, level int) {
-	for i := 0; i < level; i++ {
-		buf.WriteString(indentString)
-	}
 }
 
 // Marshal encodes its argument as an s-expression
