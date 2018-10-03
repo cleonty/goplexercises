@@ -2,10 +2,11 @@ package sexpr
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 )
 
-func TestMarshal(t *testing.T) {
+func TestMarshalUnmarshal(t *testing.T) {
 	type Movie struct {
 		Title, Subtitle string
 		Year            int
@@ -39,4 +40,11 @@ func TestMarshal(t *testing.T) {
 		t.Errorf("%v\v", err)
 	}
 	fmt.Println(string(data))
+	var movie Movie
+	if err := Unmarshal(data, &movie); err != nil {
+		t.Errorf("%v\v", err)
+	}
+	if !reflect.DeepEqual(strangelove, movie) {
+		t.Errorf("after unmarshaling got %v, want %v\v", movie, strangelove)
+	}
 }
