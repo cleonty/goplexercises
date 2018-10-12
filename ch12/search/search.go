@@ -13,6 +13,7 @@ func search(resp http.ResponseWriter, req *http.Request) {
 		Labels     []string `http:"l"`
 		MaxResults int      `http:"max"`
 		Exact      bool     `http:"x"`
+		Email      string   `http:"email" validator:"email"`
 	}
 	data.MaxResults = 10
 	if err := params.Unpack(req, &data); err != nil {
@@ -23,6 +24,7 @@ func search(resp http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
+	log.Printf("starting...")
 	http.HandleFunc("/", search)
 	log.Fatal(http.ListenAndServe("localhost:8080", nil))
 }
