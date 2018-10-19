@@ -11,6 +11,7 @@ void bz2free(bz_stream* s) { free(s); }
 import "C"
 
 import (
+	"sync"
 	"io"
 	"unsafe"
 )
@@ -19,6 +20,7 @@ type writer struct {
 	w      io.Writer // underlying output stream
 	stream *C.bz_stream
 	outbuf [64 * 1024]byte
+	sync.Mutex
 }
 
 // NewWriter returns a writer for bzip2-compressed streams.
@@ -38,6 +40,8 @@ func (w *writer) Write(data []byte) (int, error) {
 	if w.stream == nil {
 		panic("closed")
 	}
+	w.Lock()
+	defer w.Unlock()
 	var total int // uncompressed bytes written
 
 	for len(data) > 0 {
@@ -60,10 +64,12 @@ func (w *writer) Close() error {
 	if w.stream == nil {
 		panic("closed")
 	}
+	w.Lock()
 	defer func() {
 		C.BZ2_bzCompressEnd(w.stream)
 		C.bz2free(w.stream)
 		w.stream = nil
+		w.Unlock()
 	}()
 	for {
 		inlen, outlen := C.uint(0), C.uint(cap(w.outbuf))
